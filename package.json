@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:bash": "bash wasm/bash/build.sh",
+    "build:spike-tool": "bash wasm/spike-tool/build.sh",
     "lint": "oxlint",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler pages deploy"

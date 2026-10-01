@@ -2,27 +2,13 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { openpty } from 'xterm-pty'
+import { loadModuleFactory } from '../wasm/loadEmscriptenModule'
+import { wasmToolRegistry } from '../wasm/toolRegistry'
 import '@xterm/xterm/css/xterm.css'
 import './bashTerminal.css'
 
-// The prebuilt bash.wasm module isn't part of Vite's module graph (it's a
-// gitignored build artifact copied into public/ by `pnpm run build:bash`).
-// Vite's dev server refuses to serve public/ files through its module
-// import pipeline at all ("should not be imported from source code"), so
-// the glue JS is fetched as plain text and re-imported from a blob: URL,
-// which bypasses Vite entirely (the browser resolves blob: URLs natively).
 const BASH_DIR = '/bash/'
 const BASH_MODULE_URL = `${BASH_DIR}bash.js`
-
-async function loadBashModuleFactory() {
-  const code = await fetch(BASH_MODULE_URL).then((res) => res.text())
-  const blobUrl = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
-  try {
-    return (await import(/* @vite-ignore */ blobUrl)).default
-  } finally {
-    URL.revokeObjectURL(blobUrl)
-  }
-}
 
 export function BashTerminal() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -53,16 +39,21 @@ export function BashTerminal() {
 
     void (async () => {
       try {
-        const createBashModule = await loadBashModuleFactory()
+        const createBashModule = await loadModuleFactory(BASH_MODULE_URL, BASH_DIR)
         if (cancelled) return
         await createBashModule({
           pty: slave,
           // No rc files exist on the ephemeral MEMFS — skip reading them.
           arguments: ['--norc', '--noprofile'],
-          // Loaded from a blob: URL now, so the module can't infer its own
-          // directory from import.meta.url to find bash.wasm — point it
-          // back at the real path explicitly.
-          locateFile: (path: string) => `${BASH_DIR}${path}`,
+          // Called from wasm/bash/wasm-tool-bridge.js (linked into bash's
+          // own build) whenever a recognized external tool command runs —
+          // see wasm/bash/README.md ("External tools") for the full design.
+          // Returns an already-locateFile-wired factory, same as bash's own.
+          wasmToolLoader: async (name: string) => {
+            const entry = wasmToolRegistry[name]
+            if (!entry) return null
+            return loadModuleFactory(entry.jsUrl, entry.dir)
+          },
         })
       } catch (err) {
         console.error('failed to start bash.wasm', err)

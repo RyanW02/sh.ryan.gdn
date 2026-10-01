@@ -1,0 +1,152 @@
+diff --git a/execute_cmd.c b/execute_cmd.c
+index 070f5119..0a9c7d65 100644
+--- a/execute_cmd.c
++++ b/execute_cmd.c
+@@ -171,6 +171,8 @@ static int execute_function (SHELL_VAR *, WORD_LIST *, int, struct fd_bitmap *,
+ static int execute_builtin_or_function (WORD_LIST *, sh_builtin_func_t *,
+ 					    SHELL_VAR *,
+ 					    REDIRECT *, struct fd_bitmap *, int);
++static int find_wasm_tool (const char *);
++static int execute_wasm_tool_command (WORD_LIST *, const char *, REDIRECT *);
+ static void execute_subshell_builtin_or_function (WORD_LIST *, REDIRECT *,
+ 						      sh_builtin_func_t *,
+ 						      SHELL_VAR *,
+@@ -4475,6 +4477,7 @@ execute_simple_command (SIMPLE_COM *simple_command, int pipe_in, int pipe_out, i
+   sh_builtin_func_t *builtin;
+   SHELL_VAR *func;
+   volatile int old_builtin, old_command_builtin;
++  int wasm_tool;
+ 
+   result = EXECUTION_SUCCESS;
+   special_builtin_failed = builtin_is_special = 0;
+@@ -4520,6 +4523,7 @@ execute_simple_command (SIMPLE_COM *simple_command, int pipe_in, int pipe_out, i
+   old_last_async_pid = last_asynchronous_pid;
+ 
+   already_forked = 0;
++  wasm_tool = 0;
+ 
+   /* If we're in a pipeline or run in the background, set DOFORK so we
+      make the child early, before word expansion.  This keeps assignment
+@@ -4808,11 +4812,13 @@ run_builtin:
+      the command directly. */
+   if (func == 0 && builtin == 0)
+     builtin = find_shell_builtin (this_command_name);
++  if (func == 0 && builtin == 0)
++    wasm_tool = find_wasm_tool (this_command_name);
+ 
+   last_shell_builtin = this_shell_builtin;
+   this_shell_builtin = builtin;
+ 
+-  if (builtin || func)
++  if (builtin || func || wasm_tool)
+     {
+       if (builtin)
+         {
+@@ -4851,6 +4857,13 @@ run_builtin:
+ 	     cmdflags);
+ 	  subshell_level--;
+ 	}
++      else if (wasm_tool)
++	{
++	  result = execute_wasm_tool_command
++	    (words, this_command_name, simple_command->redirects);
++	  set_pipestatus_from_exit (result);
++	  goto return_result;
++	}
+       else
+ 	{
+ 	  result = execute_builtin_or_function
+@@ -5572,6 +5585,93 @@ execute_subshell_builtin_or_function (WORD_LIST *words, REDIRECT *redirects,
+     }
+ }
+ 
++/* --- Browser PoC: dispatch to a separately-compiled WASM tool module. ---
++   There is no real fork()/exec() under WebAssembly (Emscripten's libc
++   stubs both to ENOSYS/ENOEXEC, and that's not going to change). Rather
++   than trying to preserve fork()/execve()'s low-level ABI, a small,
++   explicitly-curated set of external tools is dispatched exactly the way
++   bash already runs builtins without forking (see execute_builtin_or_function
++   immediately below, which this mirrors): apply this command's redirects,
++   run the tool via a JS-side Asyncify bridge (wasm_exec_tool, implemented
++   in wasm/bash/wasm-tool-bridge.js), restore the redirects, return its exit
++   code as an ordinary C value. Only commands in this list are affected —
++   anything else keeps going through the existing (real, currently-failing)
++   fork/exec path unchanged. */
++
++static const char *wasm_tools[] = {
++  "echoargv",
++  (char *)NULL
++};
++
++static int
++find_wasm_tool (const char *name)
++{
++  int i;
++
++  for (i = 0; wasm_tools[i]; i++)
++    if (STREQ (name, wasm_tools[i]))
++      return 1;
++  return 0;
++}
++
++extern int wasm_exec_tool (const char *, char **, const char *, int);
++
++static int
++execute_wasm_tool_command (WORD_LIST *words, const char *tool_name, REDIRECT *redirects)
++{
++  int result, need_stdin, stdin_len, stdin_cap, n;
++  char **argv;
++  char *stdin_buf;
++  char chunk[4096];
++
++  if (do_redirections (redirects, RX_ACTIVE|RX_UNDOABLE) != 0)
++    {
++      undo_partial_redirects ();
++      dispose_exec_redirects ();
++      return (EX_REDIRFAIL);
++    }
++
++  /* Only drain real stdin when there's an explicit `<' redirect, i.e. fd 0
++     is a regular MEMFS file (never the live pty) -- that keeps this a
++     plain, non-blocking read loop with no interaction with bash's own
++     Asyncify-based fd_read wrapping. Interactive stdin for a wasm tool
++     (no redirect at all) is not supported in this milestone. */
++  need_stdin = stdin_redirects (redirects) != 0;
++  stdin_buf = (char *)NULL;
++  stdin_len = 0;
++
++  if (need_stdin)
++    {
++      stdin_cap = 4096;
++      stdin_buf = (char *)xmalloc (stdin_cap);
++      while ((n = read (0, chunk, sizeof (chunk))) > 0)
++	{
++	  if (stdin_len + n > stdin_cap)
++	    {
++	      stdin_cap = (stdin_len + n) * 2;
++	      stdin_buf = (char *)xrealloc (stdin_buf, stdin_cap);
++	    }
++	  memcpy (stdin_buf + stdin_len, chunk, n);
++	  stdin_len += n;
++	}
++    }
++
++  argv = strvec_from_word_list (words, 0, 0, (int *)NULL);
++
++  result = wasm_exec_tool (tool_name, argv, stdin_buf, stdin_len);
++
++  strvec_dispose (argv);
++  if (stdin_buf)
++    free (stdin_buf);
++
++  fflush (stdout);
++
++  undo_partial_redirects ();
++  dispose_exec_redirects ();
++
++  return (result);
++}
++
+ /* Execute a builtin or function in the current shell context.  If BUILTIN
+    is non-null, it is the builtin command to execute, otherwise VAR points
+    to the body of a function.  WORDS are the command's arguments, REDIRECTS
