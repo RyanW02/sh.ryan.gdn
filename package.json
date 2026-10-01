@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && cp dist/index.html dist/200.html",
+    "build": "tsc -b && vite build",
+    "build:bash": "bash wasm/bash/build.sh",
     "lint": "oxlint",
     "preview": "vite preview",
     "deploy": "pnpm run build && wrangler pages deploy"

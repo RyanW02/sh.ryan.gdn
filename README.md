@@ -5,9 +5,16 @@ A React + TypeScript SPA built with Vite, deployed to Cloudflare Pages.
 ## Development
 
 ```sh
+git submodule update --init --recursive  # fetches wasm/bash/vendor/bash
 pnpm install
+pnpm run build:bash                       # compiles bash to WASM, needs Docker
 pnpm run dev
 ```
+
+`pnpm run build:bash` writes `public/bash/bash.wasm` + `bash.js`, which are
+gitignored — re-run it whenever `wasm/bash/VERSION`, `wasm/bash/patches/`, or
+the Emscripten build flags change. Without it, the terminal in the app has
+nothing to load.
 
 ## Deployment
 
