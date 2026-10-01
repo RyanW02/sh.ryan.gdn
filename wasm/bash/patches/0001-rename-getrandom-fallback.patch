@@ -1,0 +1,18 @@
+diff --git a/lib/sh/random.c b/lib/sh/random.c
+index 16877430..4b2f574d 100644
+--- a/lib/sh/random.c
++++ b/lib/sh/random.c
+@@ -177,7 +177,12 @@ urandom_close (void)
+ }
+ 
+ #if !defined (HAVE_GETRANDOM)
+-/* Imperfect emulation of getrandom(2). */
++/* Imperfect emulation of getrandom(2). Renamed via macro (rather than left
++   as plain `getrandom`) because some cross-compilation sysroots (e.g.
++   Emscripten's, under _GNU_SOURCE) declare a `getrandom` prototype in
++   <unistd.h>/<sys/random.h> without actually providing a linkable
++   implementation, which collides with this static definition. */
++#define getrandom bash_getrandom_fallback
+ #ifndef GRND_NONBLOCK
+ #  define GRND_NONBLOCK 1
+ #  define GRND_RANDOM 2
