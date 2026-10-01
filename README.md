@@ -1,6 +1,6 @@
 # sh.ryan.gdn
 
-A React + TypeScript SPA built with Vite, deployed to Cloudflare Pages.
+A React + TypeScript SPA built with Vite, deployed to GitHub Pages.
 
 Currently: a PoC for an interactive bash-scripting tutorial — a real GNU bash
 shell compiled to WebAssembly (via Emscripten) and run entirely client-side in
@@ -23,17 +23,13 @@ nothing to load.
 
 ## Deployment
 
-Deployed as a static site to Cloudflare Pages via Wrangler (no Pages Functions).
+Deployed as a static site to GitHub Pages via `.github/workflows/deploy.yml` —
+every push to `main` builds the site (including the WASM artifacts, via Docker)
+and publishes it automatically. No manual deploy step; trigger a re-run by
+pushing to `main` or via the Actions tab's "Run workflow" button
+(`workflow_dispatch`).
 
-```sh
-pnpm dlx wrangler login   # first time only, opens a browser
-pnpm run deploy           # builds and deploys dist/ to Cloudflare Pages
-```
-
-The first deploy creates the Pages project (`sh-ryan-gdn`, see `wrangler.jsonc`) if it doesn't exist yet.
-
-### Custom domain
-
-Cloudflare Pages custom domains aren't configurable via `wrangler.jsonc`/CLI — add
-`sh.ryan.gdn` under **Workers & Pages → sh-ryan-gdn → Custom domains** in the
-Cloudflare dashboard (the `ryan.gdn` zone must already be on Cloudflare).
+The custom domain (`sh.ryan.gdn`) and its DNS verification are already
+configured at the GitHub Pages settings level (Settings → Pages) — nothing
+repo-side is needed for that beyond the committed `public/CNAME` file, which
+exists mainly as a defense-in-depth record of the domain.
