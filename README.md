@@ -20,6 +20,15 @@ pnpm run deploy           # builds and deploys dist/ to Cloudflare Pages
 
 The first deploy creates the Pages project (`sh-ryan-gdn`, see `wrangler.jsonc`) if it doesn't exist yet.
 
+### CI (GitHub Actions)
+
+`.github/workflows/deploy.yml` builds and deploys to Cloudflare Pages on every push to `main`. It needs
+two repository secrets (**Settings → Secrets and variables → Actions**):
+
+- `CLOUDFLARE_API_TOKEN` — a token with the "Cloudflare Pages: Edit" permission (create one at
+  [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens))
+- `CLOUDFLARE_ACCOUNT_ID` — found on the right-hand sidebar of any page in the Cloudflare dashboard
+
 ### Custom domain
 
 Cloudflare Pages custom domains aren't configurable via `wrangler.jsonc`/CLI — add
