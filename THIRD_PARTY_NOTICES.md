@@ -19,3 +19,16 @@ uses the following third-party software:
   pinned submodule commit + patches + `wasm/bash/build.sh`) is the
   corresponding source for that artifact. See `wasm/bash/README.md` for how to
   reproduce the exact binary.
+
+## xterm.js (`@xterm/xterm`, `@xterm/addon-fit`)
+
+- **License:** MIT
+- Used for the in-browser terminal emulator UI.
+
+## xterm-pty
+
+- **License:** MIT
+- Provides the PTY bridge between xterm.js and the Emscripten-compiled
+  bash module (termios/line-discipline emulation, stdin/stdout wiring). Its
+  `emscripten-pty.js` `--js-library` file is linked into the bash build (see
+  `wasm/bash/build.sh`).

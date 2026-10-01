@@ -2,6 +2,11 @@
 
 A React + TypeScript SPA built with Vite, deployed to Cloudflare Pages.
 
+Currently: a PoC for an interactive bash-scripting tutorial — a real GNU bash
+shell compiled to WebAssembly (via Emscripten) and run entirely client-side in
+an xterm.js terminal, with no server. See `wasm/bash/README.md` for how that's
+built, and `THIRD_PARTY_NOTICES.md` for licensing.
+
 ## Development
 
 ```sh
