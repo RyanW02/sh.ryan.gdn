@@ -14,6 +14,7 @@ BASH_SRC="$ROOT/wasm/bash/vendor/bash"
 PATCH_DIR="$ROOT/wasm/bash/patches"
 OUT_DIR="$ROOT/public/bash"
 PTY_JS_LIB="$ROOT/node_modules/xterm-pty/emscripten-pty.js"
+TOOL_BRIDGE_JS_LIB="$ROOT/wasm/bash/wasm-tool-bridge.js"
 
 if [ ! -f "$BASH_SRC/configure" ]; then
   echo "error: $BASH_SRC/configure not found — did you run 'git submodule update --init --recursive'?" >&2
@@ -102,7 +103,7 @@ emconfigure ./configure \
 # being large enough" partway through boot. 1MB is comfortably enough in
 # practice; shrink later if binary size/perf matters more than margin.
 emmake make CPPFLAGS="-DNEED_EXTERN_PC" bash \
-  LDFLAGS="-sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576 -sEXIT_RUNTIME=1 --js-library=$PTY_JS_LIB"
+  LDFLAGS="-sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,callMain,ccall,cwrap -sMODULARIZE=1 -sEXPORT_ES6=1 -sENVIRONMENT=web -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576 -sEXIT_RUNTIME=1 --js-library=$PTY_JS_LIB --js-library=$TOOL_BRIDGE_JS_LIB"
 
 mkdir -p "$OUT_DIR"
 # emcc's `-o bash` names the JS glue file literally "bash" (no .js

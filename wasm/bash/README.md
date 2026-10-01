@@ -5,12 +5,15 @@ Compiles GNU bash to a WASM module (`public/bash/bash.wasm` + glue
 plan/PR description for the full feature context — this file only covers the
 build itself, its licensing shape, and current verification status.
 
-## Scope (PoC)
+## Scope
 
-Bash **builtins only** — no external commands, no pipelines, no fork/exec, no
-job control, no persistence. Emscripten has no fork()/exec() support. See
-`THIRD_PARTY_NOTICES.md` and the project plan for why, and for what a future
-milestone adding real process support would need to look like.
+Bash builtins, plus a small, explicitly-curated set of separately-compiled
+external WASM tools (see "External tools" below) — no real fork()/exec(),
+no job control, no persistence. Emscripten has no fork()/exec() support and
+never will (confirmed: no roadmap change upstream). See
+`THIRD_PARTY_NOTICES.md` and the project plan for the full reasoning, and for
+what's still explicitly out of scope (subshells, command/process
+substitution, background jobs, coprocesses, true concurrent pipelines).
 
 Readline is kept **enabled** (not disabled): `xterm-pty` (the JS bridge used
 on the frontend) implements genuine PTY termios semantics (`TCGETS`/`TCSETS`,
@@ -150,6 +153,81 @@ and harmless given this PoC's scope: `unsupported syscall:
 __syscall_getresgid32` and `unsupported syscall: __syscall_wait4` (no
 fork/exec means no real process info to report; Emscripten stubs these and
 logs a warning rather than crashing).
+
+## External tools: dispatching to a separate WASM module
+
+Since real fork()/exec() is permanently unavailable, running anything other
+than a bash builtin (e.g. a future `sed`) works by substituting a
+`posix_spawn`-style "run a different compiled module and get its result
+back" operation for the fork+exec pair, dispatched at exactly the point bash
+already runs builtins without forking (`execute_simple_command`'s
+`run_builtin:` block in `execute_cmd.c`, patched by
+`patches/0002-add-wasm-tool-dispatch.patch`) — see the project plan for the
+full design rationale (why this works for single external commands but not
+for subshells/substitution/backgrounding, which need bash's *own*
+interpreter to be the "child").
+
+Validated end-to-end against a trivial hand-written spike tool
+(`wasm/spike-tool/echoargv.c`) before attempting anything real, per the
+project plan's own advice (every non-obvious bash/xterm-pty bug so far was
+found by testing, not by reasoning) — and that paid off again. Four more real
+bugs surfaced, none of them hypothetical:
+
+1. **`goto return_result` was only inside the original builtin/function
+   branch**, not shared by the sibling `already_forked`/`wasm_tool` branches.
+   The `wasm_tool` branch returned the right exit code but then fell straight
+   through into `execute_from_filesystem` → `execute_disk_command` →
+   `make_child()` → the usual fork failure, *after* the tool had already run
+   successfully. Fix: `execute_wasm_tool_command`'s branch must also call
+   `set_pipestatus_from_exit()` and `goto return_result;` itself, exactly
+   like the builtin/function branch does.
+
+2. **Plain top-level JS functions in a `--js-library` file are not visible
+   at runtime**, even though the file compiles without error. Emscripten
+   extracts/re-serializes each `mergeInto(LibraryManager.library, {...})`
+   entry independently rather than preserving the file's own lexical scope —
+   a helper function declared *outside* that call (as `wasm-tool-bridge.js`
+   first had) throws `ReferenceError: <name> is not defined` the first time
+   it's actually called. Fix: every shared helper must itself be registered
+   inside the same `mergeInto` call with a `$`-prefixed name (exactly how
+   `emscripten-pty.js` structures its own helpers like `$PTY_handleSleep`),
+   and listed in the consuming function's `__deps`.
+
+3. **A non-function `$`-prefixed library value doesn't survive that same
+   serialization** — `$wasmToolSkipFSEntries: new Set([...])` compiled fine
+   but `.has` wasn't a function on it at runtime. Library symbols need to be
+   functions; a lookup that isn't naturally one (like "should this path be
+   skipped") needs to be written as one (`$wasmToolShouldSkipFSEntry:
+   function (entry) { return entry === 'dev' || entry === 'proc'; }`).
+
+4. **Tool modules need `-sEXIT_RUNTIME=1`, not `=0`.** They're invoked with
+   `noInitialRun: true` and an explicit `callMain()` call (so the bridge gets
+   the exit code directly as `callMain`'s return value, rather than needing
+   `onExit`), which seemed to argue for skipping runtime-exit machinery
+   entirely. But with `EXIT_RUNTIME=0`, C stdio's own exit-time flush never
+   runs — content written via `fwrite`/`printf` without a trailing newline
+   sits in the C library's internal buffer and is silently lost once the
+   module instance is discarded. The actual Emscripten warning text gives
+   the game away: *"stdio streams had content in them that was not flushed.
+   you should set EXIT_RUNTIME to 1 ... or make sure to emit a newline when
+   you printf etc."* `EXIT_RUNTIME=1` is harmless here since a fresh module
+   instance is created per invocation anyway (no pooling in this milestone).
+
+The bridge itself (`wasm/bash/wasm-tool-bridge.js`, linked into bash's build
+via a second `--js-library` flag in `build-inner.sh`, alongside xterm-pty's)
+instantiates a **fresh** tool module per invocation — no pty, ever (tool
+modules never link `emscripten-pty.js`; stdin/stdout/stderr are plain
+buffers/callbacks) — copies bash's entire MEMFS tree into the tool's own
+private filesystem before running it and copies it back afterward (so
+`sed file.txt`-style file-argument usage and `>`-redirect-created files both
+work), and writes the tool's captured output back onto bash's own
+already-redirected real fd 1/2 (so a pty-visible invocation and a
+redirected-to-file invocation both "just work" via the same code path, no
+special-casing). The C side only drains real stdin into a buffer when
+there's an explicit `<` redirect (`stdin_redirects()` is nonzero) — never
+for the live interactive pty, which keeps the read a plain, non-blocking
+loop over a regular MEMFS file with no Asyncify interaction needed on that
+side.
 
 ## Licensing
 
