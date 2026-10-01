@@ -25,9 +25,7 @@ nothing to load.
 
 Deployed as a static site to GitHub Pages via `.github/workflows/deploy.yml` —
 every push to `main` builds the site (including the WASM artifacts, via Docker)
-and publishes it automatically. No manual deploy step; trigger a re-run by
-pushing to `main` or via the Actions tab's "Run workflow" button
-(`workflow_dispatch`).
+and publishes it automatically. No manual deploy step.
 
 The custom domain (`sh.ryan.gdn`) and its DNS verification are already
 configured at the GitHub Pages settings level (Settings → Pages) — nothing
