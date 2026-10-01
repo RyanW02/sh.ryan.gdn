@@ -35,6 +35,19 @@ cd "$BASH_SRC"
 git clean -xdf
 git checkout -f "$PINNED_COMMIT"
 
+# `git checkout -f` sets every file's mtime to checkout time in arbitrary
+# (not dependency) order, so the already-generated `configure` can come out
+# looking older than configure.ac/aclocal.m4. make's own timestamp rule then
+# tries to regenerate it via autoconf, which isn't installed in this image
+# (and, if it were, would regenerate with whatever autoconf version apt
+# happens to provide, not the one bash's maintainers actually used). Force
+# the correct relative order instead: configure (and its other generated
+# siblings) touched last, so make considers them already up to date.
+touch aclocal.m4
+touch config.h.in
+find . -name 'Makefile.in' -exec touch {} +
+touch configure
+
 if [ -n "$(ls -A "$PATCH_DIR" 2>/dev/null)" ]; then
   for patch in "$PATCH_DIR"/*.patch; do
     echo "applying $patch"

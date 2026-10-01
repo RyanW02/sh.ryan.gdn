@@ -30,12 +30,46 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Restore bash WASM cache
+        id: cache-bash
+        uses: actions/cache/restore@v4
+        with:
+          path: public/bash
+          key: bash-wasm-${{ hashFiles('wasm/bash/VERSION', 'wasm/bash/patches/**', 'wasm/bash/build.sh', 'wasm/bash/build-inner.sh', 'wasm/bash/Dockerfile', 'wasm/bash/wasm-tool-bridge.js', 'pnpm-lock.yaml') }}
+
       # Docker-based Emscripten builds -- ubuntu-latest runners have Docker
       # available by default, no extra setup needed. These produce the
       # gitignored public/bash/* and public/tools/* WASM artifacts that
       # `vite build` copies into dist/; see wasm/bash/README.md.
       - run: pnpm run build:bash
+        if: steps.cache-bash.outputs.cache-hit != 'true'
+
+      # Only main's own successful builds get to populate the shared cache --
+      # never from a PR-triggered run, even if one is added later -- so an
+      # untrusted branch can never poison what main restores from.
+      - name: Save bash WASM cache
+        if: steps.cache-bash.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: public/bash
+          key: ${{ steps.cache-bash.outputs.cache-primary-key }}
+
+      - name: Restore spike-tool WASM cache
+        id: cache-spike-tool
+        uses: actions/cache/restore@v4
+        with:
+          path: public/tools
+          key: spike-tool-wasm-${{ hashFiles('wasm/spike-tool/build.sh', 'wasm/spike-tool/echoargv.c') }}
+
       - run: pnpm run build:spike-tool
+        if: steps.cache-spike-tool.outputs.cache-hit != 'true'
+
+      - name: Save spike-tool WASM cache
+        if: steps.cache-spike-tool.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: public/tools
+          key: ${{ steps.cache-spike-tool.outputs.cache-primary-key }}
 
       - run: pnpm run build
 
