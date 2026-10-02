@@ -159,19 +159,69 @@ logs a warning rather than crashing).
 Since real fork()/exec() is permanently unavailable, running anything other
 than a bash builtin (e.g. a future `sed`) works by substituting a
 `posix_spawn`-style "run a different compiled module and get its result
-back" operation for the fork+exec pair, dispatched at exactly the point bash
-already runs builtins without forking (`execute_simple_command`'s
-`run_builtin:` block in `execute_cmd.c`, patched by
-`patches/0002-add-wasm-tool-dispatch.patch`) — see the project plan for the
-full design rationale (why this works for single external commands but not
-for subshells/substitution/backgrounding, which need bash's *own*
-interpreter to be the "child").
+back" operation for the fork+exec pair. See the project plan for the full
+design rationale (why this works for single external commands but not for
+subshells/substitution/backgrounding, which need bash's *own* interpreter to
+be the "child").
+
+**How a command is recognized as one of these tools has changed since the
+first version of this mechanism**, specifically to make it feel like a real
+Unix filesystem rather than a special case bash is aware of by name. The
+first version checked a hardcoded array of tool names inside bash's own C
+source, before bash's normal command lookup even ran — which meant adding a
+tool required patching and rebuilding bash every time, and `type sed` /
+`command -v sed` / `ls /usr/bin` would all report nothing, since these tools
+never actually existed as files from bash's point of view.
+
+The current version instead lets bash's **normal `$PATH` search**
+(`search_for_command` in `findcmd.c`) find these tools as real files: the
+frontend seeds a one-line marker stub — `#!wasmtool <name>` — into
+`/usr/bin/<name>` for each registered tool at startup (via Emscripten's
+`preRun` module-config hook, in `src/terminal/BashTerminal.tsx`), with the
+executable bit set. `findcmd.c`'s `file_status()`/`executable_file()` (the
+functions that gate PATH search candidates) only ever check `stat()` and
+permission bits, never file content, so this is a completely unremarkable
+file as far as bash's own lookup is concerned — confirmed by reading that
+code, not assumed. `/usr/bin` is already on bash's compiled-in default
+`$PATH` (`DEFAULT_PATH_VALUE` in `config-top.h`), so no PATH changes were
+needed either.
+
+The actual interception now happens in `execute_disk_command`
+(`execute_cmd.c`), right after its own `search_for_command()` call succeeds
+and before the fork decision that follows it: `wasm_tool_stub_name()` reads
+the first ~64 bytes of the resolved path, and if it starts with
+`#!wasmtool `, extracts the tool name and calls `execute_wasm_tool_command()`
+(the function that actually runs the bridge — unchanged from before)
+directly, bypassing `make_child()`/fork entirely and returning its result
+immediately — same `patches/0002-add-wasm-tool-dispatch.patch`, now a
+single consolidated patch for this whole mechanism rather than the original
+name-list version. No hardcoded C-side list exists anymore; adding a new
+tool only means compiling it and adding one entry to
+`src/wasm/toolRegistry.ts` plus the `preRun` seeding loop already picking it
+up automatically — no bash source changes, no rebuild of bash itself.
+
+One deliberate conservative choice: the stub-detection early-return sits
+*before* `execute_disk_command`'s own "found a real command" bookkeeping
+(shell-level adjustment for the `nofork`/`exec` case, `maybe_make_export_env`,
+`put_command_name_into_env`) rather than after it — `adjust_shell_level(-1)`
+in particular assumes the process is about to be replaced or exit, neither
+of which happens for a wasm-tool dispatch, so running it would leave
+`shell_level` permanently wrong for something like `exec sed`. Skipping that
+whole block is simpler and safer than reasoning through every interaction;
+the only user-visible cost is `$_` not reflecting these tools' resolved path.
 
 Validated end-to-end against a trivial hand-written spike tool
 (`wasm/spike-tool/echoargv.c`) before attempting anything real, per the
 project plan's own advice (every non-obvious bash/xterm-pty bug so far was
-found by testing, not by reasoning) — and that paid off again. Four more real
-bugs surfaced, none of them hypothetical:
+found by testing, not by reasoning) — and that paid off again, twice over
+(once when building the first version of this mechanism, again when
+reworking it to use real PATH lookup). Four real bugs surfaced in total,
+none of them hypothetical. The first is specific to the original
+`execute_simple_command`-based call site described above and no longer
+applies now that it's gone, but is kept here since the lesson generalizes —
+it's exactly why the current version's early-return is placed where it is,
+immediately and unconditionally, rather than assuming any later cleanup
+code will "just also run":
 
 1. **`goto return_result` was only inside the original builtin/function
    branch**, not shared by the sibling `already_forked`/`wasm_tool` branches.

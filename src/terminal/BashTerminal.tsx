@@ -54,6 +54,22 @@ export function BashTerminal() {
             if (!entry) return null
             return loadModuleFactory(entry.jsUrl, entry.dir)
           },
+          // Seeds a one-line marker stub for each registered tool at the
+          // real path bash's own $PATH search would find it — runs after
+          // the filesystem is initialized but before main()/interactive
+          // use starts, so `type`/`command -v`/`ls /usr/bin` all see these
+          // as real files, same as execute_disk_command's content-based
+          // detection expects (wasm/bash/patches/0002-add-wasm-tool-dispatch.patch).
+          preRun: [
+            (mod: any) => {
+              mod.FS.mkdirTree('/usr/bin')
+              for (const name of Object.keys(wasmToolRegistry)) {
+                const path = `/usr/bin/${name}`
+                mod.FS.writeFile(path, `#!wasmtool ${name}\n`)
+                mod.FS.chmod(path, 0o755)
+              }
+            },
+          ],
         })
       } catch (err) {
         console.error('failed to start bash.wasm', err)
