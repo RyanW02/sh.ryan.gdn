@@ -107,6 +107,11 @@ mergeInto(LibraryManager.library, {
 
         const toolModule = await factory({
           noInitialRun: true,
+          // Some tools (BusyBox in particular) dispatch on argv[0] itself --
+          // without this, Emscripten's own default thisProgram ("./this.program")
+          // would be what the compiled main() sees instead of the real
+          // invoked name, exactly as if a real symlink pointed at it.
+          thisProgram: name,
           print: (line) => stdoutChunks.push(line + '\n'),
           printErr: (line) => stderrChunks.push(line + '\n'),
           stdin: () => (stdinPos < stdinBytes.length ? stdinBytes[stdinPos++] : null),

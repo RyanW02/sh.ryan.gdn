@@ -1,3 +1,6 @@
 [submodule "wasm/bash/vendor/bash"]
 	path = wasm/bash/vendor/bash
 	url = https://git.savannah.gnu.org/git/bash.git
+[submodule "wasm/busybox/vendor/busybox"]
+	path = wasm/busybox/vendor/busybox
+	url = https://git.busybox.net/busybox

@@ -35,6 +35,7 @@ dist-ssr
 public/bash/
 
 # Built external WASM tool artifacts (produced by `pnpm run build:*`, not
-# committed -- same reasoning as public/bash/ above, plus these aren't
-# GPL-encumbered in the first place so it's purely a build-hygiene choice)
+# committed -- same reasoning as public/bash/ above; some of these (BusyBox)
+# are GPL-encumbered too, see THIRD_PARTY_NOTICES.md for the corresponding
+# source
 public/tools/
