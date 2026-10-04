@@ -71,6 +71,23 @@ jobs:
           path: public/tools
           key: ${{ steps.cache-spike-tool.outputs.cache-primary-key }}
 
+      - name: Restore busybox WASM cache
+        id: cache-busybox
+        uses: actions/cache/restore@v4
+        with:
+          path: public/tools
+          key: busybox-wasm-${{ hashFiles('wasm/busybox/VERSION', 'wasm/busybox/busybox.config', 'wasm/busybox/build.sh', 'wasm/busybox/build-inner.sh', 'wasm/busybox/Dockerfile') }}
+
+      - run: pnpm run build:busybox
+        if: steps.cache-busybox.outputs.cache-hit != 'true'
+
+      - name: Save busybox WASM cache
+        if: steps.cache-busybox.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: public/tools
+          key: ${{ steps.cache-busybox.outputs.cache-primary-key }}
+
       - run: pnpm run build
 
       - uses: actions/upload-pages-artifact@v3
